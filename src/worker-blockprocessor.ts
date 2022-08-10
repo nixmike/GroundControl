@@ -1,17 +1,13 @@
 import "./openapi/api";
 import "reflect-metadata";
-import { DataSource, Repository } from "typeorm";
+import { DataSource, getRepository, Repository } from "typeorm";
 import { TokenToAddress } from "./entity/TokenToAddress";
 import { SendQueue } from "./entity/SendQueue";
 import { KeyValue } from "./entity/KeyValue";
 import { TokenToTxid } from "./entity/TokenToTxid";
-require("dotenv").config();
+import { getDataSource } from "./database";
 const url = require("url");
-const parsed = url.parse(process.env.JAWSDB_MARIA_URL);
-if (!process.env.JAWSDB_MARIA_URL || !process.env.BITCOIN_RPC) {
-  console.error("not all env variables set");
-  process.exit();
-}
+require("dotenv").config();
 
 process
   .on("unhandledRejection", (reason, p) => {
@@ -22,6 +18,11 @@ process
     console.error(err, "Uncaught Exception thrown");
     process.exit(1);
   });
+
+if (!process.env.BITCOIN_RPC) {
+  console.error("not all env variables set");
+  process.exit();
+}
 
 let jayson = require("jayson/promise");
 let rpc = url.parse(process.env.BITCOIN_RPC);
@@ -104,21 +105,9 @@ async function processBlock(blockNum, sendQueueRepository: Repository<SendQueue>
   }
 }
 
-const dataSource = new DataSource({
-  type: "mariadb",
-  host: parsed.hostname,
-  port: parsed.port,
-  username: parsed.auth.split(":")[0],
-  password: parsed.auth.split(":")[1],
-  database: parsed.path.replace("/", ""),
-  synchronize: true,
-  logging: false,
-  entities: ["src/entity/**/*.ts"],
-  migrations: ["src/migration/**/*.ts"],
-  subscribers: ["src/subscriber/**/*.ts"]
-});
-
-dataSource.connect().then(async (connection) => {
+getDataSource()
+  .connect()
+  .then(async (connection) => {
     // start worker
     console.log("running groundcontrol worker-blockprocessor");
     console.log(require("fs").readFileSync("./bowie.txt").toString("ascii"));

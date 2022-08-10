@@ -36,10 +36,12 @@ const dataSource = new DataSource({
   logging: false,
   entities: ["src/entity/**/*.ts"],
   migrations: ["src/migration/**/*.ts"],
-  subscribers: ["src/subscriber/**/*.ts"]
+  subscribers: ["src/subscriber/**/*.ts"],
 });
 
-dataSource.connect().then(async (connection) => {
+dataSource
+  .connect()
+  .then(async (connection) => {
     // start worker
     console.log("running groundcontrol worker-sender");
     console.log(require("fs").readFileSync("./bowie.txt").toString("ascii"));
