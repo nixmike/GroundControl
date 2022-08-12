@@ -1,12 +1,15 @@
 import "./openapi/api";
 import "reflect-metadata";
-import { DataSource, getRepository, Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
 import { TokenToAddress } from "./entity/TokenToAddress";
 import { SendQueue } from "./entity/SendQueue";
 import { KeyValue } from "./entity/KeyValue";
 import { TokenToTxid } from "./entity/TokenToTxid";
+import { Network, Transaction } from "./types";
 import { getDataSource } from "./database";
-const url = require("url");
+import BitcoinNetwork from "./networks/bitcoin";
+import PushNotificationOnchainAddressGotPaid = Components.Schemas.PushNotificationOnchainAddressGotPaid;
+
 require("dotenv").config();
 
 process
@@ -19,129 +22,112 @@ process
     process.exit(1);
   });
 
-if (!process.env.BITCOIN_RPC) {
-  console.error("not all env variables set");
-  process.exit();
-}
+const groupByKey = <T>(list: T[], key: string) => list.reduce((hash, obj: any) => (
+  { ...hash, [obj[key]]: (hash[obj[key]] || []).concat(obj) }), {} as {[key: string]: T[]});
 
-let jayson = require("jayson/promise");
-let rpc = url.parse(process.env.BITCOIN_RPC);
-let client = jayson.client.http(rpc);
+async function processTransactions(transactions: Transaction[], sendQueueRepository: Repository<SendQueue>) {
+  // checking if there is a subscription to one of the mined txids:
+  const includedTransactionIds = transactions.map((tx) => tx.transactionId);
+  if (includedTransactionIds.length) {
+    const query2 = ds.getRepository(TokenToTxid).createQueryBuilder().where("txid IN (:...txids)", { txids: includedTransactionIds });
+    for (const t2txid of await query2.getMany()) {
+      const payload: Components.Schemas.PushNotificationTxidGotConfirmed = {
+        txid: t2txid.txid,
+        type: 4,
+        level: "transactions",
+        token: t2txid.token,
+        os: t2txid.os === "ios" ? "ios" : "android",
+        badge: 1,
+      };
 
-const LAST_PROCESSED_BLOCK = "LAST_PROCESSED_BLOCK";
-
-async function processBlock(blockNum, sendQueueRepository: Repository<SendQueue>) {
-  console.log("processing new block", +blockNum);
-  const responseGetblockhash = await client.request("getblockhash", [blockNum]);
-  const responseGetblock = await client.request("getblock", [responseGetblockhash.result, 2]);
-  const addresses: string[] = [];
-  const allPotentialPushPayloadsArray: Components.Schemas.PushNotificationOnchainAddressGotPaid[] = [];
-  const txids: string[] = [];
-  for (const tx of responseGetblock.result.tx) {
-    txids.push(tx.txid);
-    if (tx.vout) {
-      for (const output of tx.vout) {
-        if (output.scriptPubKey && output.scriptPubKey.addresses) {
-          for (const address of output.scriptPubKey.addresses) {
-            addresses.push(address);
-            const payload: Components.Schemas.PushNotificationOnchainAddressGotPaid = {
-              address,
-              txid: tx.txid,
-              sat: Math.floor(output.value * 100000000),
-              type: 2,
-              level: "transactions",
-              token: "",
-              os: "ios",
-            };
-            allPotentialPushPayloadsArray.push(payload);
-          }
-        }
-      }
+      process.env.VERBOSE && console.log("enqueueing", payload);
+      await sendQueueRepository.save({
+        data: JSON.stringify(payload),
+      });
     }
   }
 
-  console.warn(addresses.length, "addresses paid in block");
-  // allPotentialPushPayloadsArray.push({ address: "bc1qaemfnglf928kd9ma2jzdypk333au6ctu7h7led", txid: "666", sat: 1488, type: 2, token: "", os: "ios" }); // debug fixme
-  // addresses.push("bc1qaemfnglf928kd9ma2jzdypk333au6ctu7h7led"); // debug fixme
-
-  const query = dataSource.getRepository(TokenToAddress).createQueryBuilder().where("address IN (:...address)", { address: addresses });
-
-  for (const t2a of await query.getMany()) {
-    // found all addresses that we are tracking on behalf of our users. now,
-    // iterating all addresses in a block to see if there is a match.
-    // we could only iterate tracked addresses, but that would imply deduplication which is not good (for example,
-    // in a single block user could get several incoming payments to different owned addresses)
-    // cycle in cycle is less than optimal, but we can live with that for now
-    for (let payload of allPotentialPushPayloadsArray) {
-      if (t2a.address === payload.address) {
-        process.env.VERBOSE && console.log("enqueueing", payload);
-        payload.os = t2a.os === "android" ? "android" : "ios"; // hacky
-        payload.token = t2a.token;
-        payload.type = 2;
-        payload.badge = 1;
-        await sendQueueRepository.save({
-          data: JSON.stringify(payload),
-        });
-      }
-    }
+  // now handle the events of each transaction
+  const affectedAddresses = transactions.flatMap((tx) => tx.events.map((event) => event.address));
+  if (!affectedAddresses.length) {
+    return;
   }
 
-  // now, checking if there is a subscription to one of the mined txids:
-  const query2 = dataSource.getRepository(TokenToTxid).createQueryBuilder().where("txid IN (:...txids)", { txids });
-  for (const t2txid of await query2.getMany()) {
-    const payload: Components.Schemas.PushNotificationTxidGotConfirmed = {
-      txid: t2txid.txid,
-      type: 4,
-      level: "transactions",
-      token: t2txid.token,
-      os: t2txid.os === "ios" ? "ios" : "android",
-      badge: 1,
-    };
+  // Find any tokens
+  const query = ds.getRepository(TokenToAddress).createQueryBuilder().where("address IN (:...address)", { address: affectedAddresses });
+  const tokensByAddress = groupByKey(await query.getMany(), "address");
 
-    process.env.VERBOSE && console.log("enqueueing", payload);
-    await sendQueueRepository.save({
-      data: JSON.stringify(payload),
-    });
+  for (let transaction of transactions) {
+    for (let event of transaction.events) {
+      const token = tokensByAddress[event.address]?.[0];
+
+      // Ignore any for which we have no subscription.
+      if (!token) {
+        continue;
+      }
+
+      const payload: PushNotificationOnchainAddressGotPaid = {
+        address: event.address,
+        level: "transactions",
+        os: token.os as any,
+        token: token.token,
+        sat: parseInt(event.amount),
+        txid: transaction.transactionId,
+        type: 2,
+        badge: 1,
+      };
+      process.env.VERBOSE && console.log("enqueueing", payload);
+      await sendQueueRepository.save({
+        data: JSON.stringify(payload),
+      });
+    }
   }
 }
 
-getDataSource()
-  .connect()
+export function getBitcoinNetwork() {
+  if (!process.env.BITCOIN_RPC) {
+    console.error("BITCOIN_RPC env variable not set");
+    process.exit();
+  }
+
+  return new BitcoinNetwork(process.env.BITCOIN_RPC);
+}
+
+const ds = getDataSource();
+ds.connect()
   .then(async (connection) => {
     // start worker
     console.log("running groundcontrol worker-blockprocessor");
     console.log(require("fs").readFileSync("./bowie.txt").toString("ascii"));
 
-    const KeyValueRepository = dataSource.getRepository(KeyValue);
-    const sendQueueRepository = dataSource.getRepository(SendQueue);
+    // TODO: Add CLI options/env variables to allow selecting a network.
+    // Values to be provided:
+    //   - a network id per https://github.com/ChainAgnostic/CAIPs/blob/master/CAIPs/caip-2.md
+    //   - an rpc url or any other config values required to serve the network.
+    const network: Network = getBitcoinNetwork();
 
-    while (1) {
-      const keyVal = await KeyValueRepository.findOneBy({ key: LAST_PROCESSED_BLOCK });
-      if (!keyVal) {
-        // if no info saved in database we assume we are all caught up and wait for the next block
-        const responseGetblockcount = await client.request("getblockcount", []);
-        await KeyValueRepository.save({ key: LAST_PROCESSED_BLOCK, value: responseGetblockcount.result });
-        continue; // skipping worker iteration
-      }
+    const KeyValueRepository = ds.getRepository(KeyValue);
+    const sendQueueRepository = ds.getRepository(SendQueue);
+    const lastProcessedBlockKey = `LAST_PROCESSED_BLOCK/${network.id}`;
 
-      const responseGetblockcount = await client.request("getblockcount", []);
+    const queryState = async () => {
+      const v = (await KeyValueRepository.findOneBy({ key: lastProcessedBlockKey }))?.value;
+      return v ? parseInt(v) : null;
+    };
+    const saveState = async (state: number) => {
+      await KeyValueRepository.save({ key: lastProcessedBlockKey, value: state.toString() });
+    };
 
-      if (+responseGetblockcount.result <= +keyVal.value) {
-        await new Promise((resolve) => setTimeout(resolve, 60000, false));
-        continue;
-      }
-
-      const nextBlockToProcess = +keyVal.value + 1; // or +responseGetblockcount.result to aways process last block and skip intermediate blocks
+    for await (const block of network.iterateBlocks(await queryState())) {
+      console.log('processing', block)
       const start = +new Date();
-      try {
-        await processBlock(nextBlockToProcess, sendQueueRepository);
-      } catch (error) {
-        console.warn("exception when processing block:", error, "continuing as usuall");
-      }
+
+      const transactions = await network.processBlock(block);
+      await processTransactions(transactions, sendQueueRepository);
+
       const end = +new Date();
       console.log("took", (end - start) / 1000, "sec");
-      keyVal.value = String(nextBlockToProcess);
-      await KeyValueRepository.save(keyVal);
+      await saveState(block);
     }
   })
   .catch((error) => {

@@ -107,8 +107,9 @@ async function processMempool() {
   }
 }
 
-getDataSource()
-  .connect()
+const dataSource = getDataSource();
+
+dataSource.connect()
   .then(async (connection) => {
     // start worker
     console.log("running groundcontrol worker-processmempool");
