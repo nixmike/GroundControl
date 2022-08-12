@@ -9,6 +9,7 @@ import { Network, Transaction } from "./types";
 import { getDataSource } from "./database";
 import BitcoinNetwork from "./networks/bitcoin";
 import PushNotificationOnchainAddressGotPaid = Components.Schemas.PushNotificationOnchainAddressGotPaid;
+import EVMNetwork from "./networks/evm";
 
 require("dotenv").config();
 
@@ -93,6 +94,15 @@ export function getBitcoinNetwork() {
   return new BitcoinNetwork(process.env.BITCOIN_RPC);
 }
 
+export function getEthereumNetwork() {
+  if (!process.env.ETHEREUM_RPC) {
+    console.error("ETHEREUM_RPC env variable not set");
+    process.exit();
+  }
+
+  return new EVMNetwork('ethereum', process.env.ETHEREUM_RPC);
+}
+
 const ds = getDataSource();
 ds.connect()
   .then(async (connection) => {
@@ -105,6 +115,7 @@ ds.connect()
     //   - a network id per https://github.com/ChainAgnostic/CAIPs/blob/master/CAIPs/caip-2.md
     //   - an rpc url or any other config values required to serve the network.
     const network: Network = getBitcoinNetwork();
+    //const network: Network = getEthereumNetwork();
 
     const KeyValueRepository = ds.getRepository(KeyValue);
     const sendQueueRepository = ds.getRepository(SendQueue);
