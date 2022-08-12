@@ -9,10 +9,6 @@ import { SendQueue } from "../entity/SendQueue";
 import { KeyValue } from "../entity/KeyValue";
 require("dotenv").config();
 const pck = require("../../package.json");
-if (!process.env.JAWSDB_MARIA_URL || !process.env.FCM_SERVER_KEY || !process.env.APNS_PEM) {
-  console.error("not all env variables set");
-  process.exit();
-}
 
 const LAST_PROCESSED_BLOCK = "LAST_PROCESSED_BLOCK";
 

@@ -1,10 +1,10 @@
 import "./openapi/api";
 import "reflect-metadata";
-import { DataSource } from "typeorm";
 import { SendQueue } from "./entity/SendQueue";
 import { GroundControlToMajorTom } from "./class/GroundControlToMajorTom";
 import { TokenConfiguration } from "./entity/TokenConfiguration";
 import { NOTIFICATION_LEVEL_NEWS, NOTIFICATION_LEVEL_PRICE, NOTIFICATION_LEVEL_TIPS, NOTIFICATION_LEVEL_TRANSACTIONS } from "./openapi/constants";
+import { getDataSource } from "./database";
 require("dotenv").config();
 const url = require("url");
 const parsed = url.parse(process.env.JAWSDB_MARIA_URL);
@@ -25,21 +25,11 @@ process
     process.exit(1);
   });
 
-const dataSource = new DataSource({
-  type: "mariadb",
-  host: parsed.hostname,
-  port: parsed.port,
-  username: parsed.auth.split(":")[0],
-  password: parsed.auth.split(":")[1],
-  database: parsed.path.replace("/", ""),
-  synchronize: true,
-  logging: false,
-  entities: ["src/entity/**/*.ts"],
-  migrations: ["src/migration/**/*.ts"],
-  subscribers: ["src/subscriber/**/*.ts"]
-});
+const dataSource = getDataSource();
 
-dataSource.connect().then(async (connection) => {
+dataSource
+  .connect()
+  .then(async (connection) => {
     // start worker
     console.log("running groundcontrol worker-sender");
     console.log(require("fs").readFileSync("./bowie.txt").toString("ascii"));

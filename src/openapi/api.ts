@@ -44,11 +44,19 @@ declare namespace Components {
          * payload for push notification delivered to phone
          */
         export interface PushNotificationLightningInvoicePaid {
-            type: 1;
+            /**
+             * type:
+             *  * `1` - Your lightning invoice was paid
+             *  * `2` - New transaction to one of your addresses
+             *  * `3` - New unconfirmed transaction to one of your addresses
+             *  * `4` - Transaction confirmed
+             *
+             */
+            type: 1 | 2 | 3 | 4 | 1;
             token: string;
             os: "android" | "ios";
             badge?: number;
-            level: "transactions";
+            level: NotificationLevel;
             /**
              * amount of satoshis
              */
@@ -66,11 +74,19 @@ declare namespace Components {
          * payload for push notification delivered to phone
          */
         export interface PushNotificationOnchainAddressGotPaid {
-            type: 2;
+            /**
+             * type:
+             *  * `1` - Your lightning invoice was paid
+             *  * `2` - New transaction to one of your addresses
+             *  * `3` - New unconfirmed transaction to one of your addresses
+             *  * `4` - Transaction confirmed
+             *
+             */
+            type: 1 | 2 | 3 | 4 | 2;
             token: string;
             os: "android" | "ios";
             badge?: number;
-            level: "transactions";
+            level: NotificationLevel;
             /**
              * amount of satoshis
              */
@@ -88,11 +104,19 @@ declare namespace Components {
          * payload for push notification delivered to phone
          */
         export interface PushNotificationOnchainAddressGotUnconfirmedTransaction {
-            type: 3;
+            /**
+             * type:
+             *  * `1` - Your lightning invoice was paid
+             *  * `2` - New transaction to one of your addresses
+             *  * `3` - New unconfirmed transaction to one of your addresses
+             *  * `4` - Transaction confirmed
+             *
+             */
+            type: 1 | 2 | 3 | 4 | 3;
             token: string;
             os: "android" | "ios";
             badge?: number;
-            level: "transactions";
+            level: NotificationLevel;
             /**
              * amount of satoshis
              */
@@ -110,11 +134,19 @@ declare namespace Components {
          * payload for push notification delivered to phone
          */
         export interface PushNotificationTxidGotConfirmed {
-            type: 4;
+            /**
+             * type:
+             *  * `1` - Your lightning invoice was paid
+             *  * `2` - New transaction to one of your addresses
+             *  * `3` - New unconfirmed transaction to one of your addresses
+             *  * `4` - Transaction confirmed
+             *
+             */
+            type: 1 | 2 | 3 | 4 | 4;
             token: string;
             os: "android" | "ios";
             badge?: number;
-            level: "transactions";
+            level: NotificationLevel;
             /**
              * txid of the transaction that got confirmed
              */
@@ -142,24 +174,7 @@ declare namespace Components {
 declare namespace Paths {
     namespace Enqueue {
         namespace Post {
-            /**
-             * payload for push notification delivered to phone
-             */
-            export interface RequestBody {
-                /**
-                 * type:
-                 *  * `1` - Your lightning invoice was paid
-                 *  * `2` - New transaction to one of your addresses
-                 *  * `3` - New unconfirmed transaction to one of your addresses
-                 *  * `4` - Transaction confirmed
-                 *
-                 */
-                type: 1 | 2 | 3 | 4;
-                token: string;
-                os: "android" | "ios";
-                badge?: number;
-                level: Components.Schemas.NotificationLevel;
-            }
+            export type RequestBody = /* payload for push notification delivered to phone */ Components.Schemas.PushNotificationLightningInvoicePaid | /* payload for push notification delivered to phone */ Components.Schemas.PushNotificationOnchainAddressGotPaid | /* payload for push notification delivered to phone */ Components.Schemas.PushNotificationOnchainAddressGotUnconfirmedTransaction | /* payload for push notification delivered to phone */ Components.Schemas.PushNotificationTxidGotConfirmed;
             namespace Responses {
                 export interface $200 {
                 }
